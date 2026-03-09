@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 from io import BytesIO
 import textwrap
 
-# Bot Token - Replace with your token from @BotFather
+# Your Bot Token - Replace with your token from @BotFather
 BOT_TOKEN = "6818501149:AAFG8g"
 
 # AniList API endpoint
