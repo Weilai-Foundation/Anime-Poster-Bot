@@ -175,14 +175,21 @@ class BannerMaker:
             return None
 
         W, H = self.width, self.height
-        img = Image.new("RGB", (W, H), (0, 0, 0))
+        PINK = (255, 183, 197)
+        WHITE = (255, 255, 255)
+        BLACK = (0, 0, 0)
+
+        img = Image.new("RGB", (W, H), BLACK)
         draw = ImageDraw.Draw(img)
 
-        # 1. Background Gradient
-        self.draw_gradient(img, W, H)
+        # 1. Decorative Circles
+        # Top right
+        draw.ellipse((W - 250, -150, W + 150, 250), fill=PINK)
+        # Bottom left
+        draw.ellipse((-150, H - 150, 250, H + 250), fill=PINK)
 
         # 2. Layout split
-        left_w = int(W * 0.55)
+        left_w = int(W * 0.6)
         right_w = W - left_w
 
         # 3. Media Image (Right Side)
@@ -206,80 +213,58 @@ class BannerMaker:
                     media_img = media_img.crop((0, top, media_img.width, top + new_height))
 
                 media_img = media_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-                # Apply brightness filter (80%)
-                enhancer = ImageEnhance.Brightness(media_img)
-                media_img = enhancer.enhance(0.8)
-
                 img.paste(media_img, (left_w, 0))
 
-                # Gradient overlay (to left, from transparent to black)
-                overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-                overlay_draw = ImageDraw.Draw(overlay)
-                for x in range(target_w):
-                    alpha = int(255 * (1 - x / (target_w * 0.8))) # Fade out to the right
-                    if alpha < 0: alpha = 0
-                    overlay_draw.line((x, 0, x, target_h), fill=(0, 0, 0, alpha))
-                img.paste(overlay, (left_w, 0), overlay)
+        # 4. Branding Header
+        brand_y = 120
+        # Vertical line - ending near the end of the title
+        draw.rectangle((40, brand_y - 20, 44, brand_y + 260), fill=PINK)
+        # Horizontal short line below "MANGA SARROWS"
+        draw.rectangle((40, brand_y + 45, 260, brand_y + 49), fill=PINK)
+        draw.text((60, brand_y), "MANGA SARROWS", font=self.font(28, True), fill=WHITE)
 
-        # 4. Red Accent Line (Left side)
-        draw.rectangle((20, 30, 24, H - 30), fill=(179, 0, 0)) # #b30000
-
-        # 5. Tag
-        draw.text((50, 50), "MANGA COLLECTION", font=self.font(14), fill=(187, 187, 187)) # #bbb
-
-        # 6. Title
+        # 5. Title
         title_dict = data.get("title") or {}
         title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN").upper()
 
-        title_y = 80
-        for line in textwrap.wrap(title, width=20):
-            draw.text((50, title_y), line, font=self.font(44, True), fill=(229, 9, 20)) # #e50914
-            title_y += 50
+        title_y = brand_y + 70
+        for line in textwrap.wrap(title, width=22)[:3]:
+            draw.text((60, title_y), line, font=self.font(55, True), fill=WHITE)
+            title_y += 65
 
-        # 7. Subtitle
-        romaji = title_dict.get("romaji")
-        english = title_dict.get("english")
-        subtitle = f"“{romaji}”" if romaji and english and romaji.lower() != english.lower() else ""
+        # 6. Genres (between pink lines)
+        cat_y = title_y + 20
+        # Upper line
+        draw.rectangle((40, cat_y, left_w - 60, cat_y + 4), fill=PINK)
 
-        # If no romaji-based subtitle, use a generic one instead of series-specific
-        if not subtitle:
-             subtitle = "“The Ultimate Collection”"
-
-        draw.text((50, title_y + 10), subtitle, font=self.font(20), fill=(221, 221, 221)) # #ddd
-        subtitle_bottom = title_y + 10 + 30
-
-        # 8. Divider Line
-        draw.line((50, subtitle_bottom + 10, 50 + int(left_w * 0.7), subtitle_bottom + 10), fill=(179, 0, 0), width=2)
-
-        # 9. Categories/Genres
         genres = (data.get("genres") or [])[:3]
-        gx = 50
-        cat_y = subtitle_bottom + 45
+        gx = 60
+        genre_text_y = cat_y + 15
         for g in genres:
             g_txt = g.upper()
-            # Draw red "icon" placeholder
-            draw.rectangle((gx, cat_y + 5, gx + 8, cat_y + 13), fill=(229, 9, 20))
-            draw.text((gx + 15, cat_y), g_txt, font=self.font(14, True), fill=(255, 255, 255))
-            bbox = draw.textbbox((gx + 15, cat_y), g_txt, font=self.font(14, True))
-            gx = bbox[2] + 30
+            draw.text((gx, genre_text_y), g_txt, font=self.font(24, True), fill=WHITE)
+            bbox = draw.textbbox((gx, genre_text_y), g_txt, font=self.font(24, True))
+            gx = bbox[2] + 60
 
-        # 10. Description
+        # Lower line
+        draw.rectangle((40, genre_text_y + 50, left_w - 60, genre_text_y + 54), fill=PINK)
+
+        # 7. Description
         desc = self.clean(data.get("description") or "No description available.")
-        desc_y = cat_y + 45
-        for line in textwrap.wrap(desc, width=60)[:5]:
-            draw.text((50, desc_y), line, font=self.font(14), fill=(170, 170, 170)) # #aaa
-            desc_y += 24
+        desc_y = genre_text_y + 80
+        for line in textwrap.wrap(desc, width=80)[:4]:
+            draw.text((60, desc_y), line, font=self.font(16), fill=WHITE)
+            desc_y += 25
 
-        # 11. Buttons
-        btn_y = desc_y + 30
-        # READ NOW
-        draw.rectangle((50, btn_y, 180, btn_y + 45), fill=(229, 9, 20))
-        draw.text((65, btn_y + 12), "READ NOW", font=self.font(14, True), fill=(255, 255, 255))
+        # 8. Buttons
+        btn_y = H - 90
+        # JOIN NOW
+        draw.rectangle((200, btn_y, 360, btn_y + 55), fill=WHITE)
+        draw.text((215, btn_y + 12), "JOIN NOW", font=self.font(22, True), fill=BLACK)
 
-        # VIEW COLLECTION
-        draw.rectangle((195, btn_y, 380, btn_y + 45), outline=(255, 255, 255), width=1)
-        draw.text((210, btn_y + 12), "VIEW COLLECTION", font=self.font(14, True), fill=(255, 255, 255))
+        # MANGA SARROWS (Lower)
+        draw.text((380, btn_y + 12), "MANGA SARROWS", font=self.font(22, True), fill=WHITE)
+        draw.rectangle((380, btn_y + 45, 580, btn_y + 49), fill=PINK)
 
         return img
 
