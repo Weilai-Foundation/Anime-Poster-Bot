@@ -172,8 +172,8 @@ class BannerMaker:
             right = self.download(url)
             if right:
                 right = right.convert("RGB")
-                # Center crop to 640x720
-                target_w, target_h = 640, 720
+                # Center crop to 580x660 (smaller than right side 640x720)
+                target_w, target_h = 580, 660
                 img_ratio = right.width / right.height
                 target_ratio = target_w / target_h
 
@@ -187,7 +187,7 @@ class BannerMaker:
                     right = right.crop((0, top, right.width, top + new_height))
 
                 right = right.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                img.paste(right, (640, 0))
+                img.paste(right, (670, 30))
 
         # Decorations (Circles)
         draw.ellipse([-200, -200, 200, 200], fill=pink) # Top-left
