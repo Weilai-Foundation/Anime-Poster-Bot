@@ -81,7 +81,7 @@ class BannerMaker:
         pink = (254, 194, 194)
 
         # Media Image (Right Side)
-        url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
+        url = (data.get("coverImage") or {}).get("extraLarge") or data.get("bannerImage")
         if url:
             right = self.download(url)
             if right:
@@ -117,27 +117,48 @@ class BannerMaker:
         draw.line((60, 205, 300, 205), fill=pink, width=6)
 
         # Title
-        title_font = self.font(76, True)
         title_dict = data.get("title") or {}
-        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")
+        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN").upper()
 
-        y = 250
-        for line in textwrap.wrap(title.upper(), 16)[:2]:
+        font_size = 80
+        lines = []
+        title_font = self.font(font_size, True)
+        while font_size >= 40:
+            title_font = self.font(font_size, True)
+            wrap_char_width = int(900 / font_size) # Estimate chars that fit in 640px
+            lines = textwrap.wrap(title, wrap_char_width)
+
+            max_w = 0
+            for line in lines:
+                bbox = draw.textbbox((0, 0), line, font=title_font)
+                max_w = max(max_w, bbox[2] - bbox[0])
+
+            if max_w <= 580 and len(lines) <= 3:
+                break
+            font_size -= 2
+
+        y = 220
+        for line in lines[:3]:
             draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
-            y += 90
+            y += font_size + 10
 
         # Genres
         draw.line((40, 470, 620, 470), fill=(255, 255, 255), width=2)
-        genres = "     ".join([g.upper() for g in (data.get("genres") or [])[:3]])
-        draw.text((60, 485), genres, font=self.font(34, True), fill=(255, 255, 255))
+        genre_list = [g.upper() for g in (data.get("genres") or [])[:3]]
+        genre_font = self.font(30, True)
+        gx = 60
+        for g in genre_list:
+            draw.text((gx, 485), g, font=genre_font, fill=(255, 255, 255))
+            bbox = draw.textbbox((0, 0), g, font=genre_font)
+            gx += (bbox[2] - bbox[0]) + 40 # Dynamic spacing
 
         # Description
         draw.line((40, 540, 620, 540), fill=(255, 255, 255), width=2)
         desc = self.clean(data.get("description") or "No description available.")
         y = 555
-        for line in textwrap.wrap(desc, 68)[:4]:
-            draw.text((60, y), line, font=self.font(16), fill=(255, 255, 255))
-            y += 20
+        for line in textwrap.wrap(desc, 60)[:4]:
+            draw.text((60, y), line, font=self.font(18), fill=(255, 255, 255))
+            y += 24
 
         # Bottom Branding
         draw.rectangle((200, 650, 320, 700), fill=(255, 255, 255))
