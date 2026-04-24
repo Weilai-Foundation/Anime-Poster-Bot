@@ -1,7 +1,7 @@
 import os
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import textwrap
 import re
 import html
@@ -157,8 +157,17 @@ class BannerMaker:
             return None
 
     def get_theme_color(self, img, title=""):
-        # Fixed Pink theme as per reference
-        return (255, 172, 190)
+        # Death Note Red theme
+        return (229, 9, 20)
+
+    def draw_gradient(self, img, W, H):
+        draw = ImageDraw.Draw(img)
+        # Approximate 135deg gradient from (0,0,0) to (17,17,17)
+        # Using line drawing for better performance than pixel plotting
+        for i in range(0, W + H, 2):
+            factor = i / (W + H)
+            val = int(17 * factor)
+            draw.line([(i, 0), (0, i)], fill=(val, val, val), width=2)
 
     # ================= BANNER =================
     def create_banner(self, data):
@@ -169,17 +178,21 @@ class BannerMaker:
         img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Theme Color
-        theme_color = self.get_theme_color(None)
+        # 1. Background Gradient
+        self.draw_gradient(img, W, H)
 
-        # 1. Media Image (Right Side)
+        # 2. Layout split
+        left_w = int(W * 0.55)
+        right_w = W - left_w
+
+        # 3. Media Image (Right Side)
         url = (data.get("coverImage") or {}).get("extraLarge") or data.get("bannerImage")
         if url:
             media_img = self.download(url)
             if media_img:
                 media_img = media_img.convert("RGB")
-                # Fill the right half
-                target_w, target_h = W // 2, H
+                # Fill the right section
+                target_w, target_h = right_w, H
                 img_ratio = media_img.width / media_img.height
                 target_ratio = target_w / target_h
 
@@ -193,67 +206,80 @@ class BannerMaker:
                     media_img = media_img.crop((0, top, media_img.width, top + new_height))
 
                 media_img = media_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                img.paste(media_img, (W // 2, 0))
 
-        # 2. Decorations (Circles)
-        draw.ellipse([-250, -250, 250, 250], fill=theme_color) # Top-left
-        draw.ellipse([600, -150, 900, 150], fill=theme_color)  # Top-center
-        draw.ellipse([-100, 600, 300, 1000], fill=theme_color) # Bottom-left
+                # Apply brightness filter (80%)
+                enhancer = ImageEnhance.Brightness(media_img)
+                media_img = enhancer.enhance(0.8)
 
-        # 3. Top Border
-        draw.line((0, 5, W, 5), fill=theme_color, width=10)
+                img.paste(media_img, (left_w, 0))
 
-        # 4. White vertical line (Left side)
-        draw.line((40, 50, 40, 640), fill=(255, 255, 255), width=2)
+                # Gradient overlay (to left, from transparent to black)
+                overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                for x in range(target_w):
+                    alpha = int(255 * (1 - x / (target_w * 0.8))) # Fade out to the right
+                    if alpha < 0: alpha = 0
+                    overlay_draw.line((x, 0, x, target_h), fill=(0, 0, 0, alpha))
+                img.paste(overlay, (left_w, 0), overlay)
 
-        # 5. Top Left Branding
-        # Vertical bar
-        draw.rectangle((35, 120, 45, 250), fill=theme_color)
-        # Horizontal line
-        draw.line((35, 225, 325, 225), fill=theme_color, width=5)
-        # Text
-        draw.text((60, 180), "MANGA SARROWS", font=self.font(30, True), fill=(255, 255, 255))
+        # 4. Red Accent Line (Left side)
+        draw.rectangle((20, 30, 24, H - 30), fill=(179, 0, 0)) # #b30000
+
+        # 5. Tag
+        draw.text((50, 50), "MANGA COLLECTION", font=self.font(14), fill=(187, 187, 187)) # #bbb
 
         # 6. Title
         title_dict = data.get("title") or {}
         title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN").upper()
 
-        font_size = 70
-        title_font = self.font(font_size, True)
-        lines = textwrap.wrap(title, width=20)
+        title_y = 80
+        for line in textwrap.wrap(title, width=20):
+            draw.text((50, title_y), line, font=self.font(44, True), fill=(229, 9, 20)) # #e50914
+            title_y += 50
 
-        y = 250
-        for line in lines[:3]:
-            draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
-            y += font_size + 5
+        # 7. Subtitle
+        romaji = title_dict.get("romaji")
+        english = title_dict.get("english")
+        subtitle = f"“{romaji}”" if romaji and english and romaji.lower() != english.lower() else ""
 
-        # 7. Genres
-        # Lines
-        draw.line((45, 480, 635, 480), fill=theme_color, width=5)
-        draw.line((45, 555, 635, 555), fill=theme_color, width=5)
-        # Text
-        genre_list = [g.upper() for g in (data.get("genres") or [])[:3]]
-        genre_font = self.font(34, True)
-        gx = 60
-        for g in genre_list:
-            draw.text((gx, 495), g, font=genre_font, fill=(255, 255, 255))
-            bbox = draw.textbbox((0, 0), g, font=genre_font)
-            gx += (bbox[2] - bbox[0]) + 70
+        # If no romaji-based subtitle, use a generic one instead of series-specific
+        if not subtitle:
+             subtitle = "“The Ultimate Collection”"
 
-        # 8. Description
+        draw.text((50, title_y + 10), subtitle, font=self.font(20), fill=(221, 221, 221)) # #ddd
+        subtitle_bottom = title_y + 10 + 30
+
+        # 8. Divider Line
+        draw.line((50, subtitle_bottom + 10, 50 + int(left_w * 0.7), subtitle_bottom + 10), fill=(179, 0, 0), width=2)
+
+        # 9. Categories/Genres
+        genres = (data.get("genres") or [])[:3]
+        gx = 50
+        cat_y = subtitle_bottom + 45
+        for g in genres:
+            g_txt = g.upper()
+            # Draw red "icon" placeholder
+            draw.rectangle((gx, cat_y + 5, gx + 8, cat_y + 13), fill=(229, 9, 20))
+            draw.text((gx + 15, cat_y), g_txt, font=self.font(14, True), fill=(255, 255, 255))
+            bbox = draw.textbbox((gx + 15, cat_y), g_txt, font=self.font(14, True))
+            gx = bbox[2] + 30
+
+        # 10. Description
         desc = self.clean(data.get("description") or "No description available.")
-        desc_y = 570
-        for line in textwrap.wrap(desc, width=65)[:4]:
-            draw.text((60, desc_y), line, font=self.font(16), fill=(255, 255, 255))
-            desc_y += 22
+        desc_y = cat_y + 45
+        for line in textwrap.wrap(desc, width=60)[:5]:
+            draw.text((50, desc_y), line, font=self.font(14), fill=(170, 170, 170)) # #aaa
+            desc_y += 24
 
-        # 9. Bottom Branding (Footer)
-        # JOIN NOW Box
-        draw.rectangle((210, 670, 365, 715), fill=(255, 255, 255))
-        draw.text((220, 675), "JOIN NOW", font=self.font(24, True), fill=(0, 0, 0))
+        # 11. Buttons
+        btn_y = desc_y + 30
+        # READ NOW
+        draw.rectangle((50, btn_y, 180, btn_y + 45), fill=(229, 9, 20))
+        draw.text((65, btn_y + 12), "READ NOW", font=self.font(14, True), fill=(255, 255, 255))
 
-        draw.text((385, 665), "MANGA SARROWS", font=self.font(34, True), fill=(255, 255, 255))
-        draw.line((385, 698, 645, 698), fill=theme_color, width=5)
+        # VIEW COLLECTION
+        draw.rectangle((195, btn_y, 380, btn_y + 45), outline=(255, 255, 255), width=1)
+        draw.text((210, btn_y + 12), "VIEW COLLECTION", font=self.font(14, True), fill=(255, 255, 255))
 
         return img
 
