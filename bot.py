@@ -24,7 +24,7 @@ class BannerMaker:
 
     def __init__(self):
         self.width = 1280
-        self.height = 500
+        self.height = 720
 
     def search(self, name, media_type="MANGA"):
         query = """
@@ -78,99 +78,79 @@ class BannerMaker:
         W, H = self.width, self.height
         img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
+        pink = (254, 194, 194)
 
+        # Media Image (Right Side)
         url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
         if url:
             right = self.download(url)
             if right:
-                right = right.convert("RGB").resize((700, 450))
-                img.paste(right, (550, 25))
+                right = right.convert("RGB")
+                # Center crop to 640x720
+                target_w, target_h = 640, 720
+                img_ratio = right.width / right.height
+                target_ratio = target_w / target_h
 
-        neon = (0, 200, 255)
-        draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=2)
-        draw.rectangle((30, 50, 34, H - 50), fill=neon)
+                if img_ratio > target_ratio:
+                    new_width = int(target_ratio * right.height)
+                    left = (right.width - new_width) // 2
+                    right = right.crop((left, 0, left + new_width, right.height))
+                else:
+                    new_height = int(right.width / target_ratio)
+                    top = (right.height - new_height) // 2
+                    right = right.crop((0, top, right.width, top + new_height))
 
-        title_font = self.font(60, True)
-        tag_font = self.font(20, True)
-        desc_font = self.font(18)
+                right = right.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                img.paste(right, (640, 0))
 
+        # Decorations (Circles)
+        draw.ellipse([-250, -250, 250, 250], fill=pink) # Top-left
+        draw.ellipse([640 - 120, -180, 640 + 120, 60], fill=pink) # Top-center
+        draw.ellipse([-120, 620, 200, 940], fill=pink) # Bottom-left
+
+        # Vertical Line
+        draw.line((40, 140, 40, 680), fill=(255, 255, 255), width=3)
+
+        # Top Branding
+        draw.line((30, 140, 60, 140), fill=pink, width=10)
+        draw.text((60, 155), "MANGA SARROWS", font=self.font(34, True), fill=(255, 255, 255))
+        draw.line((60, 205, 300, 205), fill=pink, width=6)
+
+        # Title
+        title_font = self.font(76, True)
         title_dict = data.get("title") or {}
-        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")[:40]
+        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")
 
-        y = 100
-        for line in textwrap.wrap(title.upper(), 18)[:2]:
+        y = 250
+        for line in textwrap.wrap(title.upper(), 16)[:2]:
             draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
-            y += 70
+            y += 90
 
-        draw.line((60, y, 500, y), fill=neon, width=2)
-        y += 15
+        # Genres
+        draw.line((40, 470, 620, 470), fill=(255, 255, 255), width=2)
+        genres = "     ".join([g.upper() for g in (data.get("genres") or [])[:3]])
+        draw.text((60, 485), genres, font=self.font(34, True), fill=(255, 255, 255))
 
-        x = 60
-        for g in (data.get("genres") or [])[:3]:
-            draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
-            x += 150
-
-        y += 30
-        draw.line((60, y, 500, y), fill=neon, width=2)
-        y += 15
-
+        # Description
+        draw.line((40, 540, 620, 540), fill=(255, 255, 255), width=2)
         desc = self.clean(data.get("description") or "No description available.")
-        for line in textwrap.wrap(desc, 60)[:4]:
-            draw.text((60, y), line, font=desc_font, fill=(200, 200, 200))
-            y += 22
+        y = 555
+        for line in textwrap.wrap(desc, 68)[:4]:
+            draw.text((60, y), line, font=self.font(16), fill=(255, 255, 255))
+            y += 20
+
+        # Bottom Branding
+        draw.rectangle((200, 650, 320, 700), fill=(255, 255, 255))
+        draw.text((212, 663), "JOIN NOW", font=self.font(20, True), fill=(0, 0, 0))
+        draw.text((340, 660), "MANGA SARROWS", font=self.font(30, True), fill=(255, 255, 255))
+        draw.line((340, 695, 580, 695), fill=pink, width=5)
 
         return img
 
     # ================= POSTER =================
     def create_poster(self, data):
-        if not data:
-            return None
-
-        W, H = 1280, 720
-        img = Image.new("RGB", (W, H), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
-        if url:
-            right = self.download(url)
-            if right:
-                right = right.convert("RGB").resize((800, 600))
-                img.paste(right, (450, 60))
-
-        neon = (0, 255, 150)
-        draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=3)
-        draw.rectangle((40, 60, 45, H - 60), fill=neon)
-
-        title_font = self.font(70, True)
-        tag_font = self.font(22, True)
-        desc_font = self.font(20)
-
-        title_dict = data.get("title") or {}
-        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")[:40]
-
-        y = 80
-        for line in textwrap.wrap(title.upper(), 15)[:2]:
-            draw.text((70, y), line, font=title_font, fill=(255, 255, 255))
-            y += 80
-
-        draw.line((70, y, 550, y), fill=neon, width=3)
-        y += 20
-
-        x = 70
-        for g in (data.get("genres") or [])[:3]:
-            draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
-            x += 150
-
-        y += 35
-        draw.line((70, y, 550, y), fill=neon, width=3)
-        y += 20
-
-        desc = self.clean(data.get("description") or "No description available.")
-        for line in textwrap.wrap(desc, 50)[:5]:
-            draw.text((70, y), line, font=desc_font, fill=(220, 220, 220))
-            y += 24
-
-        return img
+        # Using the same layout for poster as it matches the requested photo
+        return self.create_banner(data)
 
 
 # ================= BOT =================
