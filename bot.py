@@ -12,7 +12,7 @@ import math
 import random
 
 # Your Bot Token - Provided via environment variable
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8795689757:AAF5zQONtSnlrJr0y0W0JxfuvB9Cn2uNnFg")
 
 if not BOT_TOKEN:
     raise ValueError("No BOT_TOKEN provided in environment variables")
