@@ -156,6 +156,62 @@ class BannerMaker:
         except:
             return None
 
+    def get_theme_color(self, img, title=""):
+        colors = [
+            (254, 194, 194), # Pink
+            (135, 206, 250), # LightBlue
+            (144, 238, 144), # LightGreen
+            (255, 215, 0),   # Gold
+            (221, 160, 221), # Plum
+            (0, 255, 255),   # Cyan
+            (255, 127, 80),  # Coral
+            (127, 255, 212)  # Aquamarine
+        ]
+        if not img:
+            return colors[hash(title) % len(colors)]
+
+        # Resize to small to process faster
+        small_img = img.resize((50, 50)).convert("RGB")
+        pixels = small_img.getdata()
+
+        best_color = (254, 194, 194)
+        max_vibrancy = -1
+
+        for r, g, b in pixels:
+            # Simple vibrancy metric: max(r,g,b) - min(r,g,b)
+            # This favors saturated colors over greys/whites/blacks
+            vibrancy = max(r, g, b) - min(r, g, b)
+
+            # Avoid too dark or too bright
+            brightness = (r + g + b) / 3
+            if 50 < brightness < 200:
+                if vibrancy > max_vibrancy:
+                    max_vibrancy = vibrancy
+                    best_color = (r, g, b)
+
+        return best_color
+
+    # ================= BANNER =================
+    def draw_sparkle(self, draw, x, y, size, color):
+        # Draw a 4-pointed star
+        draw.polygon([
+            (x, y - size), # Top
+            (x + size // 6, y - size // 6),
+            (x + size, y), # Right
+            (x + size // 6, y + size // 6),
+            (x, y + size), # Bottom
+            (x - size // 6, y + size // 6),
+            (x - size, y), # Left
+            (x - size // 6, y - size // 6)
+        ], fill=color)
+
+    def draw_dots(self, draw, x, y, rows, cols, spacing, color):
+        for r in range(rows):
+            for c in range(cols):
+                dx = x + c * spacing
+                dy = y + r * spacing
+                draw.ellipse([dx - 3, dy - 3, dx + 3, dy + 3], fill=color)
+
     # ================= BANNER =================
     def create_banner(self, data):
         if not data:
@@ -164,48 +220,61 @@ class BannerMaker:
         W, H = self.width, self.height
         img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
-        pink = (254, 194, 194)
 
         # Media Image (Right Side)
         url = (data.get("coverImage") or {}).get("extraLarge") or data.get("bannerImage")
+        media_img = None
         if url:
-            right = self.download(url)
-            if right:
-                right = right.convert("RGB")
-                # Center crop to 580x660 (smaller than right side 640x720)
-                target_w, target_h = 580, 660
-                img_ratio = right.width / right.height
-                target_ratio = target_w / target_h
+            media_img = self.download(url)
+            if media_img:
+                media_img = media_img.convert("RGB")
 
-                if img_ratio > target_ratio:
-                    new_width = int(target_ratio * right.height)
-                    left = (right.width - new_width) // 2
-                    right = right.crop((left, 0, left + new_width, right.height))
-                else:
-                    new_height = int(right.width / target_ratio)
-                    top = (right.height - new_height) // 2
-                    right = right.crop((0, top, right.width, top + new_height))
-
-                right = right.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                img.paste(right, (670, 30))
-
-        # Decorations (Circles)
-        draw.ellipse([-200, -200, 200, 200], fill=pink) # Top-left
-        draw.ellipse([540, -100, 740, 100], fill=pink) # Top-center
-        draw.ellipse([-100, 620, 100, 820], fill=pink) # Bottom-left
-
-        # White Vertical Line
-        draw.line((35, 40, 35, 680), fill=(255, 255, 255), width=2)
-
-        # Top Branding
-        draw.line((20, 40, 20, 140), fill=pink, width=10) # Corner Vertical
-        draw.line((20, 40, 220, 40), fill=pink, width=10) # Corner Horizontal
-        draw.text((60, 60), "MANGA SARROWS", font=self.font(28, True), fill=(255, 255, 255))
-        draw.line((60, 100, 320, 100), fill=pink, width=4)
-
-        # Title
+        # Theme Color
         title_dict = data.get("title") or {}
         title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN").upper()
+        theme_color = self.get_theme_color(media_img, title)
+
+        if media_img:
+            right = media_img
+            # Center crop to 580x660 (smaller than right side 640x720)
+            target_w, target_h = 580, 660
+            img_ratio = right.width / right.height
+            target_ratio = target_w / target_h
+
+            if img_ratio > target_ratio:
+                new_width = int(target_ratio * right.height)
+                left = (right.width - new_width) // 2
+                right = right.crop((left, 0, left + new_width, right.height))
+            else:
+                new_height = int(right.width / target_ratio)
+                top = (right.height - new_height) // 2
+                right = right.crop((0, top, right.width, top + new_height))
+
+            right = right.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            img.paste(right, (670, 30))
+
+        # Decorations (Circles)
+        draw.ellipse([-200, -200, 200, 200], fill=theme_color) # Top-left
+        draw.ellipse([540, -100, 740, 100], fill=theme_color) # Top-center
+        draw.ellipse([-150, 570, 150, 870], fill=theme_color) # Bottom-left
+
+        # Decorative Icons
+        self.draw_sparkle(draw, 35, 300, 15, theme_color)
+        self.draw_sparkle(draw, 35, 360, 20, theme_color)
+        self.draw_sparkle(draw, 35, 420, 15, theme_color)
+        self.draw_dots(draw, 550, 600, 4, 4, 20, theme_color)
+
+        # White Vertical Line
+        draw.line((35, 40, 35, 260), fill=(255, 255, 255), width=2)
+        draw.line((35, 460, 35, 680), fill=(255, 255, 255), width=2)
+
+        # Top Branding
+        draw.line((20, 40, 20, 140), fill=theme_color, width=10) # Corner Vertical
+        draw.line((20, 40, 220, 40), fill=theme_color, width=10) # Corner Horizontal
+        draw.text((60, 60), "MANGA SARROWS", font=self.font(28, True), fill=(255, 255, 255))
+        draw.line((60, 100, 320, 100), fill=theme_color, width=4)
+
+        # Title
 
         font_size = 80
         lines = []
@@ -230,7 +299,7 @@ class BannerMaker:
             y += font_size + 5
 
         # Genres
-        draw.line((50, 460, 610, 460), fill=(255, 255, 255), width=2)
+        draw.line((50, 460, 610, 460), fill=theme_color, width=2)
         genre_list = [g.upper() for g in (data.get("genres") or [])[:3]]
         genre_font = self.font(28, True)
         gx = 60
@@ -238,7 +307,7 @@ class BannerMaker:
             draw.text((gx, 475), g, font=genre_font, fill=(255, 255, 255))
             bbox = draw.textbbox((0, 0), g, font=genre_font)
             gx += (bbox[2] - bbox[0]) + 30 # Spacing
-        draw.line((50, 520, 610, 520), fill=(255, 255, 255), width=2)
+        draw.line((50, 520, 610, 520), fill=theme_color, width=2)
 
         # Description
         desc = self.clean(data.get("description") or "No description available.")
@@ -248,10 +317,10 @@ class BannerMaker:
             y += 26
 
         # Bottom Branding
-        draw.rectangle((180, 660, 310, 700), fill=(255, 255, 255))
+        draw.rectangle((180, 660, 310, 700), fill=theme_color)
         draw.text((195, 670), "JOIN NOW", font=self.font(18, True), fill=(0, 0, 0))
         draw.text((330, 665), "MANGA SARROWS", font=self.font(28, True), fill=(255, 255, 255))
-        draw.line((330, 700, 560, 700), fill=pink, width=4)
+        draw.line((330, 700, 560, 700), fill=theme_color, width=4)
 
         return img
 
