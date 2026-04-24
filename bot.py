@@ -7,8 +7,11 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 from io import BytesIO
 import textwrap
 
-# Your Bot Token - Replace with your token from @BotFather
-BOT_TOKEN = "8795689757:AAF5zQONtSnlrJr0y0W0JxfuvB9Cn2uNnFg"
+# Your Bot Token - Provided via environment variable
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    raise ValueError("No BOT_TOKEN provided in environment variables")
 
 # AniList API endpoint
 ANILIST_API = "https://graphql.anilist.co"
@@ -115,6 +118,28 @@ class AnimePosterGenerator:
         
         return Image.alpha_composite(img.convert('RGBA'), overlay)
     
+    def _get_font(self, font_type, size):
+        """Helper to get font from multiple possible paths"""
+        bold_paths = [
+            "DejaVuSans-Bold.ttf", # Local
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+        regular_paths = [
+            "DejaVuSans.ttf", # Local
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+
+        paths = bold_paths if font_type == 'bold' else regular_paths
+
+        for path in paths:
+            try:
+                return ImageFont.truetype(path, size)
+            except:
+                continue
+        return ImageFont.load_default()
+
     def generate_poster(self, anime_data):
         """Generate anime poster"""
         # Create base
@@ -142,18 +167,11 @@ class AnimePosterGenerator:
         # Get title
         title = anime_data['title'].get('english') or anime_data['title']['romaji']
         
-        # Try to load fonts with larger sizes
-        try:
-            # Much larger fonts
-            title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 90)
-            info_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38)
-            small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
-            logo_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
-        except:
-            title_font = ImageFont.load_default()
-            info_font = ImageFont.load_default()
-            small_font = ImageFont.load_default()
-            logo_font = ImageFont.load_default()
+        # Load fonts using helper
+        title_font = self._get_font('bold', 90)
+        info_font = self._get_font('regular', 38)
+        small_font = self._get_font('regular', 32)
+        logo_font = self._get_font('bold', 42)
         
         # Add ANIME MAYHEM logo at top
         draw.text((40, 30), "ANIME MAYHEM", font=logo_font, fill=(255, 255, 255), 
