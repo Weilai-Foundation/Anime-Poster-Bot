@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv(
     "BOT_TOKEN",
-    "8795689757:AAF5zQONtSnlrJr0y0W0JxfuvB9Cn2uNnFg"  # your token (kept)
+    "8795689757:AAF5zQONtSnlrJr0y0W0JxfuvB9Cn2uNnFg"
 )
 
 ANILIST_API = "https://graphql.anilist.co"
@@ -25,6 +25,7 @@ class BannerMaker:
         self.width = 1280
         self.height = 500
 
+    # -------- API SEARCH --------
     def search(self, name, media_type="MANGA"):
         query = """
         query ($search: String, $type: MediaType) {
@@ -38,18 +39,23 @@ class BannerMaker:
         }
         """
         try:
-            res = requests.post(ANILIST_API, json={"query": query, "variables": {"search": name, "type": media_type}})
+            res = requests.post(
+                ANILIST_API,
+                json={"query": query, "variables": {"search": name, "type": media_type}},
+                timeout=10
+            )
+            res.raise_for_status()
             data = res.json()
-            if data.get("data") and data["data"].get("Media"):
-                return data["data"]["Media"]
-            return None
+            return data.get("data", {}).get("Media")
         except Exception as e:
             print(f"Search Error: {e}")
             return None
 
+    # -------- CLEAN TEXT --------
     def clean(self, txt):
         return html.unescape(re.sub("<.*?>", "", txt or ""))
 
+    # -------- FONT --------
     def font(self, size, bold=False):
         try:
             if bold:
@@ -58,36 +64,39 @@ class BannerMaker:
         except:
             return ImageFont.load_default()
 
+    # -------- DOWNLOAD IMAGE --------
     def download(self, url):
-        return Image.open(BytesIO(requests.get(url).content))
+        try:
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            return Image.open(BytesIO(res.content))
+        except:
+            return None
 
-    # ================= MAIN BANNER =================
+    # ================= BANNER =================
     def create_banner(self, data):
         if not data:
             return None
+
         W, H = self.width, self.height
         img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
         draw = ImageDraw.Draw(img)
 
-        # ========= RIGHT IMAGE =========
+        # RIGHT IMAGE
         url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
         if url:
-            try:
-                right = self.download(url).convert("RGBA").resize((800, 500))
+            right = self.download(url)
+            if right:
+                right = right.convert("RGBA").resize((800, 500))
                 img.paste(right, (480, 0))
-            except Exception as e:
-                print(f"Image Error: {e}")
 
-        # ========= DARK FADE =========
-        # Create a linear gradient for the fade
-        # Black at 480, transparent at 800 (480 + 320)
+        # FADE EFFECT
         mask = Image.new("L", (W, 1), 0)
+        for x in range(480):
+            mask.putpixel((x, 0), 255)
         for x in range(480, 800):
             alpha = int(255 * (1 - (x - 480) / 320))
             mask.putpixel((x, 0), alpha)
-        # Left of 480 is fully black
-        for x in range(480):
-            mask.putpixel((x, 0), 255)
 
         mask = mask.resize((W, H))
         fade = Image.new("RGBA", (W, H), (0, 0, 0, 255))
@@ -96,38 +105,33 @@ class BannerMaker:
         img = Image.alpha_composite(img, fade).convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # ========= NEON BORDER =========
+        # STYLE
         neon = (0, 200, 255)
-        draw.rectangle((0, 0, W-1, H-1), outline=neon, width=2)
+        draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=2)
+        draw.rectangle((30, 50, 34, H - 50), fill=neon)
 
-        # ========= LEFT LINE =========
-        draw.rectangle((30, 50, 34, H-50), fill=neon)
-
-        # ========= TEXT =========
         title_font = self.font(70, True)
         small_font = self.font(18)
         tag_font = self.font(22, True)
         desc_font = self.font(18)
 
-        # small title
         draw.text((60, 60), "MANHWA SORROWS", fill=(180, 180, 180), font=small_font)
 
-        # main title
+        # TITLE
         title_dict = data.get("title") or {}
-        title = title_dict.get("english") or title_dict.get("romaji") or "Unknown"
+        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")[:40]
+
         y = 100
         for line in textwrap.wrap(title.upper(), 18)[:2]:
             draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
             y += 75
 
-        # divider
         draw.line((60, y, 500, y), fill=neon, width=2)
         y += 15
 
-        # genres
+        # GENRES
         x = 60
-        genres = data.get("genres") or []
-        for g in genres[:3]:
+        for g in (data.get("genres") or [])[:3]:
             draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
             x += 160
 
@@ -135,89 +139,59 @@ class BannerMaker:
         draw.line((60, y, 500, y), fill=neon, width=2)
         y += 15
 
-        # description
+        # DESCRIPTION
         desc = self.clean(data.get("description") or "No description available.")
         for line in textwrap.wrap(desc, 70)[:4]:
             draw.text((60, y), line, font=desc_font, fill=(200, 200, 200))
             y += 22
 
-        # ========= BUTTONS =========
+        # BUTTONS
         y += 20
-        draw.rectangle((60, y, 170, y+40), fill=(255, 255, 255))
-        draw.text((75, y+10), "JOIN NOW", fill=(0, 0, 0), font=tag_font)
+        draw.rectangle((60, y, 170, y + 40), fill=(255, 255, 255))
+        draw.text((75, y + 10), "JOIN NOW", fill=(0, 0, 0), font=tag_font)
 
-        draw.rectangle((180, y, 360, y+40), outline=(100, 100, 100))
-        draw.text((195, y+10), "MANHWA SORROWS", fill=(255, 255, 255), font=tag_font)
+        draw.rectangle((180, y, 360, y + 40), outline=(100, 100, 100))
+        draw.text((195, y + 10), "MANHWA SORROWS", fill=(255, 255, 255), font=tag_font)
 
         return img
 
-    # ================= ANIME POSTER =================
+    # ================= POSTER =================
     def create_poster(self, data):
         if not data:
             return None
 
         W, H = 1280, 720
-        try:
-            img = Image.open("template.png").convert("RGBA")
-        except:
-            img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
         draw = ImageDraw.Draw(img)
 
-        # ========= ANIME IMAGE =========
         url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
         if url:
-            try:
-                # Place image on the right, covering more space for poster
-                right = self.download(url).convert("RGBA").resize((900, 720))
-                # Create a temporary image to paste with alpha
-                temp = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-                temp.paste(right, (380, 0))
+            right = self.download(url)
+            if right:
+                right = right.convert("RGBA").resize((900, 720))
+                img.paste(right, (380, 0))
 
-                # ========= FADE FOR POSTER =========
-                mask = Image.new("L", (W, 1), 0)
-                for x in range(380, 800):
-                    alpha = int(255 * (1 - (x - 380) / 420))
-                    mask.putpixel((x, 0), alpha)
-                for x in range(380):
-                    mask.putpixel((x, 0), 255)
-
-                mask = mask.resize((W, H))
-                fade = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-                fade.putalpha(mask)
-
-                img = Image.alpha_composite(img, temp)
-                img = Image.alpha_composite(img, fade)
-                draw = ImageDraw.Draw(img)
-            except Exception as e:
-                print(f"Image Error: {e}")
-
-        # ========= NEON BORDER =========
         neon = (0, 255, 150)
-        draw.rectangle((0, 0, W-1, H-1), outline=neon, width=3)
-        draw.rectangle((40, 60, 45, H-60), fill=neon)
+        draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=3)
+        draw.rectangle((40, 60, 45, H - 60), fill=neon)
 
-        # ========= TEXT =========
         title_font = self.font(80, True)
         tag_font = self.font(24, True)
         desc_font = self.font(20)
 
-        # main title
         title_dict = data.get("title") or {}
-        title = title_dict.get("english") or title_dict.get("romaji") or "Unknown"
+        title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")[:40]
+
         y = 80
         for line in textwrap.wrap(title.upper(), 15)[:2]:
             draw.text((70, y), line, font=title_font, fill=(255, 255, 255))
             y += 90
 
-        # divider
         draw.line((70, y, 550, y), fill=neon, width=3)
         y += 20
 
-        # genres
         x = 70
-        genres = data.get("genres") or []
-        for g in genres[:3]:
+        for g in (data.get("genres") or [])[:3]:
             draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
             x += 160
 
@@ -225,7 +199,6 @@ class BannerMaker:
         draw.line((70, y, 550, y), fill=neon, width=3)
         y += 20
 
-        # description
         desc = self.clean(data.get("description") or "No description available.")
         for line in textwrap.wrap(desc, 55)[:6]:
             draw.text((70, y), line, font=desc_font, fill=(220, 220, 220))
@@ -236,7 +209,11 @@ class BannerMaker:
 
 # ================= BOT =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome!\n\nUsage:\n/manhwa <name> - Create a manhwa banner\n/anime <name> - Create an anime poster")
+    await update.message.reply_text(
+        "Welcome!\n\n"
+        "/manhwa <name> - Create banner\n"
+        "/anime <name> - Create poster"
+    )
 
 
 async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,18 +222,22 @@ async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     name = " ".join(context.args)
-    msg = await update.message.reply_text(f"Searching for manhwa: {name}...")
+    msg = await update.message.reply_text(f"Searching: {name}...")
 
     try:
         gen = BannerMaker()
-        data = gen.search(name, media_type="MANGA")
+        data = gen.search(name, "MANGA")
 
         if not data:
-            await msg.edit_text(f"Could not find manhwa: {name}")
+            await msg.edit_text("Not found.")
             return
 
         await msg.edit_text("Generating banner...")
         banner = gen.create_banner(data)
+
+        if not banner:
+            await msg.edit_text("Failed to generate image.")
+            return
 
         bio = BytesIO()
         banner.save(bio, "PNG")
@@ -266,8 +247,8 @@ async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.delete()
 
     except Exception as e:
-        print(f"Manhwa Handler Error: {e}")
-        await msg.edit_text(f"Error: {e}")
+        print(e)
+        await msg.edit_text("Error occurred.")
 
 
 async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -276,18 +257,22 @@ async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     name = " ".join(context.args)
-    msg = await update.message.reply_text(f"Searching for anime: {name}...")
+    msg = await update.message.reply_text(f"Searching: {name}...")
 
     try:
         gen = BannerMaker()
-        data = gen.search(name, media_type="ANIME")
+        data = gen.search(name, "ANIME")
 
         if not data:
-            await msg.edit_text(f"Could not find anime: {name}")
+            await msg.edit_text("Not found.")
             return
 
         await msg.edit_text("Generating poster...")
         poster = gen.create_poster(data)
+
+        if not poster:
+            await msg.edit_text("Failed to generate image.")
+            return
 
         bio = BytesIO()
         poster.save(bio, "PNG")
@@ -297,8 +282,8 @@ async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.delete()
 
     except Exception as e:
-        print(f"Anime Handler Error: {e}")
-        await msg.edit_text(f"Error: {e}")
+        print(e)
+        await msg.edit_text("Error occurred.")
 
 
 # ================= MAIN =================
