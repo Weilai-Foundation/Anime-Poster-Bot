@@ -27,6 +27,23 @@ class BannerMaker:
         self.height = 720
 
     def search(self, name, media_type="MANGA"):
+        # Try AniList first
+        data = self.search_anilist(name, media_type)
+        if data:
+            return data
+
+        # If MANGA, try MangaDex then Jikan
+        if media_type == "MANGA":
+            data = self.search_mangadex(name)
+            if data:
+                return data
+            data = self.search_jikan(name)
+            if data:
+                return data
+
+        return None
+
+    def search_anilist(self, name, media_type="MANGA"):
         query = """
         query ($search: String, $type: MediaType) {
           Media(search: $search, type: $type) {
@@ -46,10 +63,79 @@ class BannerMaker:
             )
             res.raise_for_status()
             data = res.json()
-            return data.get("data", {}).get("Media")
+            media = data.get("data", {}).get("Media")
+            if media:
+                return {
+                    "title": media.get("title"),
+                    "description": media.get("description"),
+                    "coverImage": media.get("coverImage"),
+                    "genres": media.get("genres")
+                }
         except Exception as e:
-            print(f"Search Error: {e}")
-            return None
+            print(f"AniList Error: {e}")
+        return None
+
+    def search_mangadex(self, name):
+        url = "https://api.mangadex.org/manga"
+        params = {
+            "title": name,
+            "limit": 1,
+            "includes[]": ["cover_art"]
+        }
+        try:
+            res = requests.get(url, params=params, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            if data["data"]:
+                manga = data["data"][0]
+                attr = manga["attributes"]
+
+                # Title
+                title_map = attr["title"]
+                eng_title = title_map.get("en") or title_map.get("ja-ro") or list(title_map.values())[0]
+
+                # Description
+                desc_map = attr["description"]
+                desc = desc_map.get("en") or (list(desc_map.values())[0] if desc_map else "")
+
+                # Cover
+                cover_file = ""
+                for rel in manga["relationships"]:
+                    if rel["type"] == "cover_art":
+                        cover_file = rel.get("attributes", {}).get("fileName")
+                        break
+
+                cover_url = ""
+                if cover_file:
+                    cover_url = f"https://uploads.mangadex.org/covers/{manga['id']}/{cover_file}"
+
+                return {
+                    "title": {"english": eng_title, "romaji": None},
+                    "description": desc,
+                    "coverImage": {"extraLarge": cover_url},
+                    "genres": [t["attributes"]["name"]["en"] for t in attr["tags"] if t["attributes"]["group"] == "genre"]
+                }
+        except Exception as e:
+            print(f"MangaDex Error: {e}")
+        return None
+
+    def search_jikan(self, name):
+        url = f"https://api.jikan.moe/v4/manga?q={name}&limit=1"
+        try:
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            if data["data"]:
+                manga = data["data"][0]
+                return {
+                    "title": {"english": manga.get("title"), "romaji": manga.get("title_japanese")},
+                    "description": manga.get("synopsis"),
+                    "coverImage": {"extraLarge": manga["images"]["jpg"]["large_image_url"]},
+                    "genres": [g["name"] for g in manga.get("genres", [])]
+                }
+        except Exception as e:
+            print(f"Jikan Error: {e}")
+        return None
 
     def clean(self, txt):
         return html.unescape(re.sub("<.*?>", "", txt or ""))
@@ -104,17 +190,18 @@ class BannerMaker:
                 img.paste(right, (640, 0))
 
         # Decorations (Circles)
-        draw.ellipse([-250, -250, 250, 250], fill=pink) # Top-left
-        draw.ellipse([640 - 120, -180, 640 + 120, 60], fill=pink) # Top-center
-        draw.ellipse([-120, 620, 200, 940], fill=pink) # Bottom-left
+        draw.ellipse([-200, -200, 200, 200], fill=pink) # Top-left
+        draw.ellipse([540, -100, 740, 100], fill=pink) # Top-center
+        draw.ellipse([-100, 620, 100, 820], fill=pink) # Bottom-left
 
-        # Vertical Line
-        draw.line((40, 140, 40, 680), fill=(255, 255, 255), width=3)
+        # White Vertical Line
+        draw.line((35, 40, 35, 680), fill=(255, 255, 255), width=2)
 
         # Top Branding
-        draw.line((30, 140, 60, 140), fill=pink, width=10)
-        draw.text((60, 155), "MANGA SARROWS", font=self.font(34, True), fill=(255, 255, 255))
-        draw.line((60, 205, 300, 205), fill=pink, width=6)
+        draw.line((20, 40, 20, 140), fill=pink, width=10) # Corner Vertical
+        draw.line((20, 40, 220, 40), fill=pink, width=10) # Corner Horizontal
+        draw.text((60, 60), "MANGA SARROWS", font=self.font(28, True), fill=(255, 255, 255))
+        draw.line((60, 100, 320, 100), fill=pink, width=4)
 
         # Title
         title_dict = data.get("title") or {}
@@ -125,7 +212,7 @@ class BannerMaker:
         title_font = self.font(font_size, True)
         while font_size >= 40:
             title_font = self.font(font_size, True)
-            wrap_char_width = int(900 / font_size) # Estimate chars that fit in 640px
+            wrap_char_width = int(900 / font_size)
             lines = textwrap.wrap(title, wrap_char_width)
 
             max_w = 0
@@ -133,53 +220,51 @@ class BannerMaker:
                 bbox = draw.textbbox((0, 0), line, font=title_font)
                 max_w = max(max_w, bbox[2] - bbox[0])
 
-            if max_w <= 580 and len(lines) <= 3:
+            if max_w <= 560 and len(lines) <= 3:
                 break
             font_size -= 2
 
-        y = 220
+        y = 150
         for line in lines[:3]:
             draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
-            y += font_size + 10
+            y += font_size + 5
 
         # Genres
-        draw.line((40, 470, 620, 470), fill=(255, 255, 255), width=2)
+        draw.line((50, 460, 610, 460), fill=(255, 255, 255), width=2)
         genre_list = [g.upper() for g in (data.get("genres") or [])[:3]]
-        genre_font = self.font(30, True)
+        genre_font = self.font(28, True)
         gx = 60
         for g in genre_list:
-            draw.text((gx, 485), g, font=genre_font, fill=(255, 255, 255))
+            draw.text((gx, 475), g, font=genre_font, fill=(255, 255, 255))
             bbox = draw.textbbox((0, 0), g, font=genre_font)
-            gx += (bbox[2] - bbox[0]) + 40 # Dynamic spacing
+            gx += (bbox[2] - bbox[0]) + 30 # Spacing
+        draw.line((50, 520, 610, 520), fill=(255, 255, 255), width=2)
 
         # Description
-        draw.line((40, 540, 620, 540), fill=(255, 255, 255), width=2)
         desc = self.clean(data.get("description") or "No description available.")
-        y = 555
-        for line in textwrap.wrap(desc, 60)[:4]:
+        y = 540
+        for line in textwrap.wrap(desc, 65)[:3]:
             draw.text((60, y), line, font=self.font(18), fill=(255, 255, 255))
-            y += 24
+            y += 26
 
         # Bottom Branding
-        draw.rectangle((200, 650, 320, 700), fill=(255, 255, 255))
-        draw.text((212, 663), "JOIN NOW", font=self.font(20, True), fill=(0, 0, 0))
-        draw.text((340, 660), "MANGA SARROWS", font=self.font(30, True), fill=(255, 255, 255))
-        draw.line((340, 695, 580, 695), fill=pink, width=5)
+        draw.rectangle((180, 660, 310, 700), fill=(255, 255, 255))
+        draw.text((195, 670), "JOIN NOW", font=self.font(18, True), fill=(0, 0, 0))
+        draw.text((330, 665), "MANGA SARROWS", font=self.font(28, True), fill=(255, 255, 255))
+        draw.line((330, 700, 560, 700), fill=pink, width=4)
 
         return img
-
-    # ================= POSTER =================
-    def create_poster(self, data):
-        # Using the same layout for poster as it matches the requested photo
-        return self.create_banner(data)
 
 
 # ================= BOT =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Welcome!\n\n"
-        "/manhwa <name>\n"
-        "/anime <name>"
+        "Welcome to MANGA SARROWS Bot!\n\n"
+        "Commands:\n"
+        "/manga <name> - Search for Manga\n"
+        "/manhwa <name> - Search for Manhwa\n"
+        "/manhua <name> - Search for Manhua\n"
+        "/anime <name> - Search for Anime"
     )
 
 
@@ -194,30 +279,31 @@ async def send_with_retry(update, bio):
     return False
 
 
-async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE, media_type: str, cmd_name: str):
     if not context.args:
-        await update.message.reply_text("Usage: /manhwa <name>")
+        await update.message.reply_text(f"Usage: /{cmd_name} <name>")
         return
 
     name = " ".join(context.args)
-    msg = await update.message.reply_text(f"Searching: {name}...")
+    msg = await update.message.reply_text(f"Searching {cmd_name}: {name}...")
 
     gen = BannerMaker()
-    data = gen.search(name, "MANGA")
+    data = gen.search(name, media_type)
 
     if not data:
-        await msg.edit_text("Not found.")
+        await msg.edit_text(f"'{name}' not found.")
         return
 
     await msg.edit_text("Generating...")
-    banner = gen.create_banner(data)
+    # Use create_banner for everything since they use the same style now
+    img = gen.create_banner(data)
 
-    if not banner:
-        await msg.edit_text("Failed.")
+    if not img:
+        await msg.edit_text("Failed to generate image.")
         return
 
     bio = BytesIO()
-    banner.save(bio, "JPEG", quality=85, optimize=True)
+    img.save(bio, "JPEG", quality=90, optimize=True)
 
     success = await send_with_retry(update, bio)
 
@@ -225,39 +311,19 @@ async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.delete()
     else:
         await msg.edit_text("Failed to send image.")
+
+async def manga(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await search_media(update, context, "MANGA", "manga")
+
+async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await search_media(update, context, "MANGA", "manhwa")
+
+async def manhua(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await search_media(update, context, "MANGA", "manhua")
 
 
 async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /anime <name>")
-        return
-
-    name = " ".join(context.args)
-    msg = await update.message.reply_text(f"Searching: {name}...")
-
-    gen = BannerMaker()
-    data = gen.search(name, "ANIME")
-
-    if not data:
-        await msg.edit_text("Not found.")
-        return
-
-    await msg.edit_text("Generating...")
-    poster = gen.create_poster(data)
-
-    if not poster:
-        await msg.edit_text("Failed.")
-        return
-
-    bio = BytesIO()
-    poster.save(bio, "JPEG", quality=85, optimize=True)
-
-    success = await send_with_retry(update, bio)
-
-    if success:
-        await msg.delete()
-    else:
-        await msg.edit_text("Failed to send image.")
+    await search_media(update, context, "ANIME", "anime")
 
 
 # ================= MAIN =================
@@ -277,7 +343,9 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("manga", manga))
     app.add_handler(CommandHandler("manhwa", manhwa))
+    app.add_handler(CommandHandler("manhua", manhua))
     app.add_handler(CommandHandler("anime", anime))
 
     print("Bot Running...")
