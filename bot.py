@@ -8,6 +8,7 @@ import html
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.request import HTTPXRequest
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv(
@@ -25,7 +26,6 @@ class BannerMaker:
         self.width = 1280
         self.height = 500
 
-    # -------- API SEARCH --------
     def search(self, name, media_type="MANGA"):
         query = """
         query ($search: String, $type: MediaType) {
@@ -51,11 +51,9 @@ class BannerMaker:
             print(f"Search Error: {e}")
             return None
 
-    # -------- CLEAN TEXT --------
     def clean(self, txt):
         return html.unescape(re.sub("<.*?>", "", txt or ""))
 
-    # -------- FONT --------
     def font(self, size, bold=False):
         try:
             if bold:
@@ -64,7 +62,6 @@ class BannerMaker:
         except:
             return ImageFont.load_default()
 
-    # -------- DOWNLOAD IMAGE --------
     def download(self, url):
         try:
             res = requests.get(url, timeout=10)
@@ -79,79 +76,48 @@ class BannerMaker:
             return None
 
         W, H = self.width, self.height
-        img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+        img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # RIGHT IMAGE
         url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
         if url:
             right = self.download(url)
             if right:
-                right = right.convert("RGBA").resize((800, 500))
-                img.paste(right, (480, 0))
+                right = right.convert("RGB").resize((700, 450))
+                img.paste(right, (550, 25))
 
-        # FADE EFFECT
-        mask = Image.new("L", (W, 1), 0)
-        for x in range(480):
-            mask.putpixel((x, 0), 255)
-        for x in range(480, 800):
-            alpha = int(255 * (1 - (x - 480) / 320))
-            mask.putpixel((x, 0), alpha)
-
-        mask = mask.resize((W, H))
-        fade = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-        fade.putalpha(mask)
-
-        img = Image.alpha_composite(img, fade).convert("RGB")
-        draw = ImageDraw.Draw(img)
-
-        # STYLE
         neon = (0, 200, 255)
         draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=2)
         draw.rectangle((30, 50, 34, H - 50), fill=neon)
 
-        title_font = self.font(70, True)
-        small_font = self.font(18)
-        tag_font = self.font(22, True)
+        title_font = self.font(60, True)
+        tag_font = self.font(20, True)
         desc_font = self.font(18)
 
-        draw.text((60, 60), "MANHWA SORROWS", fill=(180, 180, 180), font=small_font)
-
-        # TITLE
         title_dict = data.get("title") or {}
         title = (title_dict.get("english") or title_dict.get("romaji") or "UNKNOWN")[:40]
 
         y = 100
         for line in textwrap.wrap(title.upper(), 18)[:2]:
             draw.text((60, y), line, font=title_font, fill=(255, 255, 255))
-            y += 75
+            y += 70
 
         draw.line((60, y, 500, y), fill=neon, width=2)
         y += 15
 
-        # GENRES
         x = 60
         for g in (data.get("genres") or [])[:3]:
             draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
-            x += 160
+            x += 150
 
-        y += 35
+        y += 30
         draw.line((60, y, 500, y), fill=neon, width=2)
         y += 15
 
-        # DESCRIPTION
         desc = self.clean(data.get("description") or "No description available.")
-        for line in textwrap.wrap(desc, 70)[:4]:
+        for line in textwrap.wrap(desc, 60)[:4]:
             draw.text((60, y), line, font=desc_font, fill=(200, 200, 200))
             y += 22
-
-        # BUTTONS
-        y += 20
-        draw.rectangle((60, y, 170, y + 40), fill=(255, 255, 255))
-        draw.text((75, y + 10), "JOIN NOW", fill=(0, 0, 0), font=tag_font)
-
-        draw.rectangle((180, y, 360, y + 40), outline=(100, 100, 100))
-        draw.text((195, y + 10), "MANHWA SORROWS", fill=(255, 255, 255), font=tag_font)
 
         return img
 
@@ -161,22 +127,22 @@ class BannerMaker:
             return None
 
         W, H = 1280, 720
-        img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+        img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
 
         url = data.get("bannerImage") or (data.get("coverImage") and data["coverImage"].get("extraLarge"))
         if url:
             right = self.download(url)
             if right:
-                right = right.convert("RGBA").resize((900, 720))
-                img.paste(right, (380, 0))
+                right = right.convert("RGB").resize((800, 600))
+                img.paste(right, (450, 60))
 
         neon = (0, 255, 150)
         draw.rectangle((0, 0, W - 1, H - 1), outline=neon, width=3)
         draw.rectangle((40, 60, 45, H - 60), fill=neon)
 
-        title_font = self.font(80, True)
-        tag_font = self.font(24, True)
+        title_font = self.font(70, True)
+        tag_font = self.font(22, True)
         desc_font = self.font(20)
 
         title_dict = data.get("title") or {}
@@ -185,7 +151,7 @@ class BannerMaker:
         y = 80
         for line in textwrap.wrap(title.upper(), 15)[:2]:
             draw.text((70, y), line, font=title_font, fill=(255, 255, 255))
-            y += 90
+            y += 80
 
         draw.line((70, y, 550, y), fill=neon, width=3)
         y += 20
@@ -193,27 +159,38 @@ class BannerMaker:
         x = 70
         for g in (data.get("genres") or [])[:3]:
             draw.text((x, y), g.upper(), font=tag_font, fill=(255, 255, 255))
-            x += 160
+            x += 150
 
-        y += 40
+        y += 35
         draw.line((70, y, 550, y), fill=neon, width=3)
         y += 20
 
         desc = self.clean(data.get("description") or "No description available.")
-        for line in textwrap.wrap(desc, 55)[:6]:
+        for line in textwrap.wrap(desc, 50)[:5]:
             draw.text((70, y), line, font=desc_font, fill=(220, 220, 220))
-            y += 25
+            y += 24
 
-        return img.convert("RGB")
+        return img
 
 
 # ================= BOT =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Welcome!\n\n"
-        "/manhwa <name> - Create banner\n"
-        "/anime <name> - Create poster"
+        "/manhwa <name>\n"
+        "/anime <name>"
     )
+
+
+async def send_with_retry(update, bio):
+    for _ in range(2):
+        try:
+            bio.seek(0)
+            await update.message.reply_photo(photo=bio)
+            return True
+        except Exception as e:
+            print("Retry sending...", e)
+    return False
 
 
 async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -224,31 +201,29 @@ async def manhwa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = " ".join(context.args)
     msg = await update.message.reply_text(f"Searching: {name}...")
 
-    try:
-        gen = BannerMaker()
-        data = gen.search(name, "MANGA")
+    gen = BannerMaker()
+    data = gen.search(name, "MANGA")
 
-        if not data:
-            await msg.edit_text("Not found.")
-            return
+    if not data:
+        await msg.edit_text("Not found.")
+        return
 
-        await msg.edit_text("Generating banner...")
-        banner = gen.create_banner(data)
+    await msg.edit_text("Generating...")
+    banner = gen.create_banner(data)
 
-        if not banner:
-            await msg.edit_text("Failed to generate image.")
-            return
+    if not banner:
+        await msg.edit_text("Failed.")
+        return
 
-        bio = BytesIO()
-        banner.save(bio, "PNG")
-        bio.seek(0)
+    bio = BytesIO()
+    banner.save(bio, "JPEG", quality=85, optimize=True)
 
-        await update.message.reply_photo(photo=bio)
+    success = await send_with_retry(update, bio)
+
+    if success:
         await msg.delete()
-
-    except Exception as e:
-        print(e)
-        await msg.edit_text("Error occurred.")
+    else:
+        await msg.edit_text("Failed to send image.")
 
 
 async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,36 +234,46 @@ async def anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = " ".join(context.args)
     msg = await update.message.reply_text(f"Searching: {name}...")
 
-    try:
-        gen = BannerMaker()
-        data = gen.search(name, "ANIME")
+    gen = BannerMaker()
+    data = gen.search(name, "ANIME")
 
-        if not data:
-            await msg.edit_text("Not found.")
-            return
+    if not data:
+        await msg.edit_text("Not found.")
+        return
 
-        await msg.edit_text("Generating poster...")
-        poster = gen.create_poster(data)
+    await msg.edit_text("Generating...")
+    poster = gen.create_poster(data)
 
-        if not poster:
-            await msg.edit_text("Failed to generate image.")
-            return
+    if not poster:
+        await msg.edit_text("Failed.")
+        return
 
-        bio = BytesIO()
-        poster.save(bio, "PNG")
-        bio.seek(0)
+    bio = BytesIO()
+    poster.save(bio, "JPEG", quality=85, optimize=True)
 
-        await update.message.reply_photo(photo=bio)
+    success = await send_with_retry(update, bio)
+
+    if success:
         await msg.delete()
-
-    except Exception as e:
-        print(e)
-        await msg.edit_text("Error occurred.")
+    else:
+        await msg.edit_text("Failed to send image.")
 
 
 # ================= MAIN =================
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    request = HTTPXRequest(
+        connect_timeout=20.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=10.0,
+    )
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .request(request)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("manhwa", manhwa))
@@ -299,4 +284,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print("Restarting bot...", e)
